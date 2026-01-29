@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
@@ -16,7 +17,7 @@ app.use(express.json());
 
 /* ---------------- ACTIVE USERS ---------------- */
 
-let activeUsers = {};  
+let activeUsers = {};
 // userId : { socket, name, role }
 
 /* ---------------- WEBSOCKET ---------------- */
@@ -143,7 +144,7 @@ app.post("/login", (req, res) => {
 
       const token = jwt.sign(
         { id: result[0].id, role: result[0].role },
-        "secret",
+        process.env.JWT_SECRET || "secret",
         { expiresIn: "1d" }
       );
 
@@ -175,6 +176,7 @@ app.put("/admin/approve/:id", (req, res) => {
   );
 });
 
-server.listen(5000, () => {
-  console.log("Server running on 5000");
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`Server running on ${PORT}`);
 });

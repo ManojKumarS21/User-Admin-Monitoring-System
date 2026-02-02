@@ -1,17 +1,19 @@
-// db.js
-const mysql = require("mysql2");
+import mysql from "mysql2";
 
-const db = mysql.createConnection({
-  host: process.env.DB_HOST || "localhost",
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "2003",
-  database: process.env.DB_NAME || "dashboard_app"
+const db = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: process.env.DB_PORT
 });
 
-db.connect(err => {
-  if (err) throw err;
-  console.log("MySQL Connected");
+db.getConnection((err) => {
+  if (err) {
+    console.error("❌ MySQL Error:", err.message);
+  } else {
+    console.log("✅ MySQL Connected");
+  }
 });
 
-module.exports = db;
+export default db;

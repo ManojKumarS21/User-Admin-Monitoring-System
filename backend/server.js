@@ -11,9 +11,18 @@ const WebSocket = require("ws");
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+const analyticsRoutes = require("./routes/analytics");
 
 app.use(cors());
 app.use(express.json());
+
+// Simple request logger
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
+app.use("/api/analytics", analyticsRoutes);
 
 /* ---------------- ACTIVE USERS ---------------- */
 
@@ -46,8 +55,8 @@ wss.on("connection", (ws) => {
 
     /* ADMIN -> USER */
     if (data.type === "ADMIN_TO_USER") {
-
-      const user = activeUsers[data.toUserId];
+      const targetId = data.toUserId || data.targetId; // Support both for safety
+      const user = activeUsers[targetId];
 
       if (user) {
         user.socket.send(JSON.stringify({
@@ -60,14 +69,17 @@ wss.on("connection", (ws) => {
 
     /* USER -> ADMIN */
     if (data.type === "USER_TO_ADMIN") {
+      const sender = activeUsers[ws.userId];
+      const fromName = sender ? sender.name : "User";
 
       Object.values(activeUsers)
         .filter(u => u.role === "admin")
         .forEach(admin => {
           admin.socket.send(JSON.stringify({
             type: "PRIVATE_MESSAGE",
-            from: "User",
-            message: data.message
+            from: fromName,
+            message: data.message,
+            fromId: ws.userId
           }));
         });
     }
@@ -176,7 +188,15 @@ app.put("/admin/approve/:id", (req, res) => {
   );
 });
 
+app.delete("/admin/reject/:id", (req, res) => {
+  db.query(
+    "DELETE FROM users WHERE id=?",
+    [req.params.id],
+    () => res.send("Rejected")
+  );
+});
+
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on http://127.0.0.1:${PORT}`);
 });

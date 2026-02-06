@@ -1,0 +1,30 @@
+# Environment variables
+.env
+backend/.env
+frontend/.env.local
+
+# Node modules
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+
+# Build outputs
+dist/
+build/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+backend/verify_db.js
+backend/verify_auth.js

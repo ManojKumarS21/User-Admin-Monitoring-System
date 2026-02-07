@@ -41,11 +41,11 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
 
     const validateAndSetFile = (file: File) => {
         const ext = file.name.split(".").pop()?.toLowerCase();
-        if (ext === "csv" || ext === "xlsx" || ext === "xls") {
+        if (ext === "csv" || ext === "xlsx" || ext === "xls" || ext === "json") {
             setFile(file);
             setStatus("idle");
         } else {
-            alert("Invalid file type. Please upload CSV or Excel.");
+            alert("Invalid file type. Please upload CSV, Excel, or JSON.");
         }
     };
 
@@ -81,8 +81,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`relative border-2 border-dashed rounded-[2.5rem] p-16 transition-all duration-500 group/drop ${dragActive
-                        ? "border-brand-primary bg-brand-primary/5 shadow-glow"
-                        : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/10"
+                    ? "border-brand-primary bg-brand-primary/5 shadow-glow"
+                    : "border-white/5 bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/10"
                     } ${file ? "border-emerald-500/30 bg-emerald-500/[0.02]" : ""}`}
                 onDragEnter={handleDrag}
                 onDragOver={handleDrag}
@@ -93,7 +93,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
                     type="file"
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     onChange={handleChange}
-                    accept=".csv,.xlsx,.xls"
+                    accept=".csv,.xlsx,.xls,.json"
                 />
 
                 <div className="flex flex-col items-center justify-center space-y-6 pointer-events-none relative z-0">
@@ -113,7 +113,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
                         <p className="text-xl font-black text-white tracking-tight mb-2">
                             {file ? file.name : "Inject Data Stream"}
                         </p>
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{file ? `Size: ${(file.size / 1024).toFixed(1)} KB` : "CSV, Excel (XLSX, XLS) - Max 50MB"}</p>
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{file ? `Size: ${(file.size / 1024).toFixed(1)} KB` : "CSV, Excel, JSON - Max 50MB"}</p>
                     </div>
 
                     {!file && (

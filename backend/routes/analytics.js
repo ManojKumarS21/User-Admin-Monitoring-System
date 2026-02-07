@@ -31,8 +31,14 @@ router.post("/upload", upload.single("file"), async (req, res) => {
             const sheetName = workbook.SheetNames[0];
             data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
             await processAndRespond(data, req, res, filePath);
+        } else if (fileExtension === ".json") {
+            const rawData = fs.readFileSync(filePath);
+            data = JSON.parse(rawData);
+            // Ensure data is an array for Power BI consistency
+            if (!Array.isArray(data)) data = [data];
+            await processAndRespond(data, req, res, filePath);
         } else {
-            res.status(400).json({ error: "Unsupported file format. Use CSV or Excel." });
+            res.status(400).json({ error: "Unsupported file format. Use CSV, Excel, or JSON." });
         }
     } catch (error) {
         res.status(500).json({ error: "Fail to parse file: " + error.message });

@@ -13,7 +13,11 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const analyticsRoutes = require("./routes/analytics");
 
-app.use(cors());
+app.use(cors({
+  origin: ["https://user-admin-monitoring-system.vercel.app", "http://localhost:3000"],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
 app.use(express.json());
 
 // Simple request logger

@@ -13,7 +13,7 @@ export function getSocket() {
 
   if (!socket || socket.readyState > 1) {
     // 2 = CLOSING, 3 = CLOSED
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:5000";
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "wss://user-admin-monitoring-system-1.onrender.com";
     socket = new WebSocket(wsUrl);
   }
 

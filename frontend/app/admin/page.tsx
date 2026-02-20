@@ -4,19 +4,23 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "../lib/api";
 import { getSocket } from "../lib/socket";
-import FileUpload from "../components/FileUpload";
 import Sidebar from "../components/Sidebar";
+import LeetCodeCard from "../components/LeetCodeCard";
+import ThemeToggle from "../components/ThemeToggle";
 import {
   Loader2,
   MessageSquare,
   CheckCircle,
   Users,
   Activity,
-  FileBarChart,
   Bell,
   Search,
   Settings,
-  Mail
+  ShieldCheck,
+  Zap,
+  UserCheck,
+  UserX,
+  Send,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,7 +30,7 @@ const PowerBIReport = dynamic(() => import("../components/PowerBIReport"), {
   loading: () => (
     <div className="flex flex-col items-center justify-center p-20 glass-card h-[500px]">
       <Loader2 className="w-12 h-12 text-brand-primary animate-spin mb-4" />
-      <p className="text-slate-400 font-medium">Initializing Visualization Engine...</p>
+      <p className="text-slate-400 font-medium font-bold uppercase tracking-widest text-[10px]">Syncing Workspace...</p>
     </div>
   )
 });
@@ -42,16 +46,19 @@ export default function AdminPage() {
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
-  const [analyticsResult, setAnalyticsResult] = useState<any>(null);
-  const [showUploadSuccess, setShowUploadSuccess] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [analyticsFilters, setAnalyticsFilters] = useState<any[]>([]);
+  const [currentAnalyticsReportId, setCurrentAnalyticsReportId] = useState<string | undefined>(undefined);
+  const [leetcodeUsername, setLeetcodeUsername] = useState<string | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   const loadPending = async () => {
     try {
       const res = await api.get("/admin/pending");
       setPendingUsers(res.data || []);
-    } catch (err) {
-      console.error("Failed to load pending users:", err);
-    }
+    } catch (err) { console.error(err); }
   };
 
   const handleLogout = () => {
@@ -71,7 +78,6 @@ export default function AdminPage() {
     setSocket(ws);
 
     const registerAdmin = () => {
-      console.log("Admin registered");
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: "USER_ONLINE",
@@ -82,374 +88,325 @@ export default function AdminPage() {
       }
     };
 
-    if (ws.readyState === WebSocket.OPEN) {
-      registerAdmin();
-    } else {
-      ws.onopen = registerAdmin;
-    }
+    if (ws.readyState === WebSocket.OPEN) registerAdmin();
+    else ws.onopen = registerAdmin;
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === "ACTIVE_USERS") {
-          setOnlineUsers(data.users.filter((u: any) => u.userId !== "admin"));
-        }
-        if (data.type === "PRIVATE_MESSAGE") {
-          setMessages(prev => [...prev, { from: data.from, message: data.message }]);
-        }
+        if (data.type === "ACTIVE_USERS") setOnlineUsers(data.users.filter((u: any) => u.userId !== "admin"));
+        if (data.type === "PRIVATE_MESSAGE") setMessages(prev => [...prev, { from: data.from, message: data.message }]);
       } catch (e) { console.error(e); }
     };
 
     loadPending();
 
-    return () => {
-      // cleanup
+    // Fetch admin's own LeetCode profile
+    const fetchProfile = async () => {
+      try {
+        const res = await api.get("/api/user/profile", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setLeetcodeUsername(res.data.leetcode_username ?? null);
+      } catch (err: any) {
+        console.error("[Profile] Failed to load admin profile:", err.response?.data || err.message);
+        setLeetcodeUsername(null);
+      } finally {
+        setProfileLoading(false);
+      }
     };
-  }, [router]);
+    fetchProfile();
+
+  }, [router, socket]);
 
   const sendMessage = (u: any) => {
     if (!socket) return;
     const msg = prompt(`Message to ${u.name}`);
     if (!msg) return;
-
-    socket.send(JSON.stringify({
-      type: "ADMIN_TO_USER",
-      toUserId: u.userId,
-      message: msg
-    }));
-
+    socket.send(JSON.stringify({ type: "ADMIN_TO_USER", toUserId: u.userId, message: msg }));
     setMessages(prev => [...prev, { from: "Me → " + u.name, message: msg }]);
-  };
-
-  const disapproveUser = async (id: number) => {
-    try {
-      await api.delete(`/admin/reject/${id}`);
-      loadPending();
-    } catch (err) {
-      console.error("Disapproval failed:", err);
-    }
   };
 
   const approveUser = async (id: number) => {
     try {
       await api.put(`/admin/approve/${id}`);
       loadPending();
-    } catch (err) {
-      console.error("Approval failed:", err);
-    }
+    } catch (err) { console.error(err); }
+  };
+
+  const disapproveUser = async (id: number) => {
+    try {
+      await api.delete(`/admin/reject/${id}`);
+      loadPending();
+    } catch (err) { console.error(err); }
   };
 
   return (
-    <div className="flex min-h-screen bg-background-main selection:bg-brand-primary/30">
+    <div className="min-h-screen selection:bg-brand-primary/30" style={{ backgroundColor: "var(--color-background-main)" }}>
+      <Sidebar
+        onLogout={handleLogout}
+        activeUsers={onlineUsers.length}
+        onVisibilityChange={setIsSidebarVisible}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
-      {/* SIDEBAR */}
-      <Sidebar onLogout={handleLogout} activeUsers={onlineUsers.length} />
-
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col min-w-0">
-
-        {/* TOP NAVBAR */}
-        <header className="h-20 border-b border-border-subtle flex items-center justify-between px-8 bg-background-main/50 backdrop-blur-md sticky top-0 z-40">
-          <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-4 py-2 rounded-2xl w-96 group focus-within:border-brand-primary/50 transition-all">
-            <Search className="w-4 h-4 text-slate-500 group-focus-within:text-brand-primary" />
-            <input
-              type="text"
-              placeholder="Search analytics, users or logs..."
-              className="bg-transparent border-none p-0 m-0 outline-none text-sm w-full placeholder:text-slate-600"
-            />
+      <motion.main
+        animate={{
+          x: isSidebarVisible ? 288 : 0,
+          scale: isSidebarVisible ? 0.98 : 1
+        }}
+        transition={{ type: "spring", damping: 25, stiffness: 200 }}
+        className="flex flex-col min-h-screen overflow-y-auto custom-scrollbar origin-left"
+      >
+        <header className="h-20 border-b flex items-center justify-between px-8 backdrop-blur-md sticky top-0 z-40" style={{ borderColor: "var(--color-border-subtle)", backgroundColor: "var(--color-background-main)" }}>
+          <div className="flex items-center gap-4 border px-4 py-2 rounded-2xl w-96 group focus-within:border-brand-primary/50 transition-all" style={{ backgroundColor: "var(--color-background-card)", borderColor: "var(--color-border-subtle)" }}>
+            <Search className="w-4 h-4 group-focus-within:text-brand-primary" style={{ color: "var(--color-text-tertiary)" }} />
+            <input type="text" placeholder="Search..." className="bg-transparent border-none p-0 m-0 outline-none text-sm w-full" style={{ color: "var(--color-text-primary)" }} />
           </div>
-
           <div className="flex items-center gap-6">
-            <button className="relative p-2.5 text-slate-400 hover:text-white bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-all mt-0 mr-0 mb-0 ml-0 hover:scale-110 active:scale-95">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border" style={{ backgroundColor: "var(--color-background-card)", borderColor: "var(--color-border-subtle)" }}>
+              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-tertiary)" }}>System Live</span>
+            </div>
+            <ThemeToggle />
+            <button className="relative p-2.5 rounded-xl border transition-all" style={{ backgroundColor: "var(--color-background-card)", borderColor: "var(--color-border-subtle)", color: "var(--color-text-secondary)" }}>
               <Bell className="w-5 h-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-brand-secondary rounded-full border-2 border-background-main" />
+              <span className="absolute top-2 right-2 w-2 h-2 bg-brand-secondary rounded-full" />
             </button>
-            <div className="h-8 w-[1px] bg-border-subtle" />
+            <div className="h-8 w-[1px]" style={{ backgroundColor: "var(--color-border-subtle)" }} />
             <div className="flex items-center gap-3 pl-2">
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-white leading-none">Administrator</p>
+                <p className="text-sm font-bold leading-none" style={{ color: "var(--color-text-primary)" }}>Administrator</p>
                 <p className="text-[10px] text-brand-primary font-bold uppercase tracking-widest mt-1">Super User</p>
               </div>
-              <div className="w-10 h-10 bg-gradient-to-tr from-brand-primary to-brand-secondary rounded-xl flex items-center justify-center text-white font-black shadow-premium">
-                A
-              </div>
+              <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white font-black shadow-glow shadow-brand-primary/20">A</div>
             </div>
           </div>
         </header>
 
-        {/* CONTENT BODY */}
-        <div className="p-8 space-y-8 max-w-[1600px] mx-auto w-full">
-
+        <div className="p-8 space-y-8 max-w-[1600px] mx-auto w-full flex-1 flex flex-col">
           <div className="flex items-end justify-between">
             <div>
-              <h1 className="text-4xl font-black text-white mb-2 tracking-tight">System Overview</h1>
-              <p className="text-slate-500 font-medium">Monitor your infrastructure and user activities in real-time.</p>
-            </div>
-            <div className="flex gap-3">
-              <button className="glass border-white/5 px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-xl hover:bg-white/10 transition-all">
-                Export Logs
-              </button>
-              <button className="bg-brand-primary shadow-glow shadow-brand-primary/20 px-6 py-2 text-xs font-black uppercase tracking-widest rounded-xl text-white hover:scale-105 active:scale-95 transition-all">
-                Generate Report
-              </button>
+              <h1 className="text-4xl font-black mb-2 tracking-tight uppercase" style={{ color: "var(--color-text-primary)" }}>
+                {activeTab === "dashboard" ? "Admin Dashboard" : "Analytics Workspace"}
+              </h1>
+              <p className="font-medium" style={{ color: "var(--color-text-tertiary)" }}>
+                {activeTab === "dashboard" ? "Real-time Monitoring & Overview" : "Power BI Integration"}
+              </p>
             </div>
           </div>
 
-          {/* KPI ROW */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-
-            {/* Pending Requests */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              className="glass-card p-6 flex flex-col h-[400px]"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-brand-primary/10 rounded-xl border border-brand-primary/20">
-                    <Users className="w-5 h-5 text-brand-primary" />
+          <AnimatePresence mode="wait">
+            {activeTab === "dashboard" ? (
+              <motion.div
+                key="dashboard"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                className="flex flex-col gap-8 h-full"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Card 1: Active Users */}
+                  <div className="glass-card p-4 border-l-4 border-emerald-500 flex items-center gap-4 group hover:bg-emerald-500/5 transition-all">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                      <Users className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-1">Active Users</h3>
+                      <p className="text-2xl font-black text-white">{onlineUsers.length}</p>
+                    </div>
+                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
                   </div>
-                  <h3 className="text-sm font-bold uppercase tracking-widest">Pending Access</h3>
+
+                  {/* Card 2: Pending Approvals */}
+                  <div className="glass-card p-4 border-l-4 border-amber-500 flex items-center gap-4 group hover:bg-amber-500/5 transition-all">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                      <UserCheck className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1">Pending Users</h3>
+                      <p className="text-2xl font-black text-white">{pendingUsers.length}</p>
+                    </div>
+                    <div className="ml-auto">
+                      <ShieldCheck className="w-4 h-4 text-amber-500/20" />
+                    </div>
+                  </div>
+
+                  {/* Card 3: Messages */}
+                  <div className="glass-card p-4 border-l-4 border-brand-primary flex items-center gap-4 group hover:bg-brand-primary/5 transition-all">
+                    <div className="w-12 h-12 rounded-2xl bg-brand-primary/10 flex items-center justify-center text-brand-primary">
+                      <MessageSquare className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-[10px] font-black uppercase tracking-widest text-brand-primary mb-1">Messages</h3>
+                      <p className="text-2xl font-black text-white">{messages.length}</p>
+                    </div>
+                    <div className="ml-auto">
+                      <Bell className="w-4 h-4 text-brand-primary/20" />
+                    </div>
+                  </div>
                 </div>
-                <span className="bg-brand-primary/20 text-brand-primary text-[10px] font-black px-2.5 py-1 rounded-lg">
-                  {pendingUsers.length} NEW
-                </span>
-              </div>
 
-              <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-3">
-                {pendingUsers.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-600/40">
-                    <CheckCircle className="w-12 h-12 mb-4 opacity-20" />
-                    <p className="text-sm italic font-medium">Queue is empty</p>
+                {/* LeetCode Profile Card */}
+                <div className="flex justify-end">
+                  <div className="w-full max-w-sm">
+                    {profileLoading ? (
+                      <div className="rounded-2xl border border-[#FFA116]/10 p-6 animate-pulse bg-[#FFA116]/5 h-48" />
+                    ) : (
+                      <LeetCodeCard
+                        leetcodeUsername={leetcodeUsername}
+                        onUsernameSet={setLeetcodeUsername}
+                      />
+                    )}
                   </div>
-                ) : (
-                  pendingUsers.map((u) => (
-                    <div key={u.id} className="p-4 bg-white/[0.02] rounded-2xl border border-white/5 hover:bg-white/[0.04] transition-all group">
-                      <div className="flex justify-between items-center mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-[10px] font-black text-slate-500">
-                            {u.name.charAt(0).toUpperCase()}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1 min-h-[500px]">
+
+                  {/* Pending Users List */}
+                  <div className="glass-card p-6 border-t-2 border-white/5 flex flex-col">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500">
+                        <UserCheck className="w-4 h-4" />
+                      </div>
+                      <h2 className="text-sm font-black uppercase tracking-widest text-white">Pending Approvals</h2>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
+                      {pendingUsers.length === 0 ? (
+                        <div className="text-center p-10 text-slate-500 text-xs font-bold uppercase tracking-widest">
+                          No pending users
+                        </div>
+                      ) : (
+                        pendingUsers.map((u: any) => (
+                          <div key={u.id} className="p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between group hover:border-amber-500/30 transition-all">
+                            <div>
+                              <p className="font-bold text-white text-sm">{u.name}</p>
+                              <p className="text-[10px] text-slate-400 font-medium">{u.email || "No email"}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => approveUser(u.id)}
+                                className="p-2 bg-emerald-500/20 text-emerald-500 rounded-xl hover:bg-emerald-500 hover:text-white transition-all shadow-glow"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => disapproveUser(u.id)}
+                                className="p-2 bg-red-500/20 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all"
+                              >
+                                <UserX className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
-                          <span className="text-xs font-bold text-white group-hover:text-brand-primary transition-colors">{u.name}</span>
-                        </div>
-                        <span className="text-[9px] text-slate-500 font-bold font-mono">ID: {u.id}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => approveUser(u.id)}
-                          className="py-2 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/10"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => disapproveUser(u.id)}
-                          className="py-2 glass border-white/5 text-red-500 hover:bg-red-500 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all"
-                        >
-                          Reject
-                        </button>
-                      </div>
+                        ))
+                      )}
                     </div>
-                  ))
-                )}
-              </div>
-            </motion.div>
-
-            {/* Live Chat / Support */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.1 }}
-              className="glass-card p-6 flex flex-col h-[400px]"
-            >
-              <div className="flex items-center gap-3 mb-8">
-                <div className="p-2.5 bg-brand-secondary/10 rounded-xl border border-brand-secondary/20">
-                  <MessageSquare className="w-5 h-5 text-brand-secondary" />
-                </div>
-                <h3 className="text-sm font-bold uppercase tracking-widest">Live Support</h3>
-              </div>
-
-              <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-3">
-                {onlineUsers.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-600/40">
-                    <div className="w-12 h-12 bg-slate-800/50 rounded-full mb-4 animate-pulse" />
-                    <p className="text-sm italic font-medium">No active connections</p>
                   </div>
-                ) : (
-                  onlineUsers.map((u: any) => (
-                    <div key={u.userId} className="flex items-center justify-between p-3 bg-white/[0.02] rounded-2xl border border-white/5 hover:border-brand-primary/30 transition-all cursor-pointer group" onClick={() => sendMessage(u)}>
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <div className="w-10 h-10 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl flex items-center justify-center text-xs font-black text-white border border-white/5">
-                            {u.name.charAt(0).toUpperCase()}
+
+                  {/* Messages / Live Feed */}
+                  <div className="glass-card p-6 border-t-2 border-white/5 flex flex-col">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="w-8 h-8 rounded-lg bg-brand-primary/10 flex items-center justify-center text-brand-primary">
+                        <MessageSquare className="w-4 h-4" />
+                      </div>
+                      <h2 className="text-sm font-black uppercase tracking-widest text-white">Live Messages</h2>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 mb-4 bg-black/20 rounded-2xl p-4 border border-white/5">
+                      {messages.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                          <MessageSquare className="w-8 h-8 mb-2 opacity-20" />
+                          <p className="text-[10px] font-bold uppercase tracking-widest">No recent messages</p>
+                        </div>
+                      ) : (
+                        messages.map((m, idx) => (
+                          <div key={idx} className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
+                            <div className="w-8 h-8 rounded-full bg-brand-primary/20 flex items-center justify-center text-xs font-black text-brand-primary shrink-0">
+                              {m.from.charAt(0)}
+                            </div>
+                            <div className="bg-white/5 p-3 rounded-2xl rounded-tl-none border border-white/5 max-w-[80%]">
+                              <p className="text-[10px] text-brand-primary font-bold mb-1">{m.from}</p>
+                              <p className="text-xs text-slate-300 leading-relaxed">{m.message}</p>
+                            </div>
                           </div>
-                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-background-main rounded-full"></div>
-                        </div>
-                        <div>
-                          <p className="text-xs font-black text-white group-hover:text-brand-primary transition-colors">{u.name}</p>
-                          <p className="text-[9px] text-emerald-400 font-bold uppercase tracking-widest mt-0.5">Online</p>
-                        </div>
-                      </div>
-                      <div className="p-2 bg-brand-primary/10 rounded-lg group-hover:bg-brand-primary text-brand-primary group-hover:text-white transition-all shadow-inner">
-                        <MessageSquare className="w-3.5 h-3.5" />
+                        ))
+                      )}
+                    </div>
+
+                    {/* Simple Broadcast Input */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Broadcast to all..."
+                        className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-brand-primary/50 outline-none transition-all"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            const input = e.target as HTMLInputElement;
+                            if (input.value.trim() && socket) {
+                              socket.send(JSON.stringify({ type: "ADMIN_TO_USER", targetId: "ALL", message: input.value }));
+                              setMessages(prev => [...prev, { from: "Me (Broadcast)", message: input.value }]);
+                              input.value = "";
+                            }
+                          }
+                        }}
+                      />
+                      <button className="p-3 bg-brand-primary text-white rounded-xl hover:bg-brand-secondary transition-all shadow-glow">
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+              </motion.div>
+            ) : activeTab === "analytics" ? (
+              <motion.div
+                key="analytics"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-8"
+              >
+                {/* Power BI Workspace Only */}
+                <div className="glass-card p-6 min-h-[500px] flex flex-col border-t-2 border-white/5">
+                  <div className="flex items-center justify-between mb-6 px-2">
+                    <div className="flex items-center gap-4">
+                      <div className="w-2.5 h-2.5 rounded-full bg-brand-primary animate-pulse shadow-[0_0_12px_rgba(99,102,241,0.6)]" />
+                      <div>
+                        <h2 className="text-sm font-black uppercase tracking-[0.2em] text-white">Power BI Core</h2>
+                        <p className="text-[10px] text-brand-primary font-black uppercase tracking-widest mt-0.5">Live Visualization Layer</p>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
-            </motion.div>
-
-            {/* Message Inbox */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.2 }}
-              className="glass-card p-6 flex flex-col h-[400px]"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-brand-primary/10 rounded-xl border border-brand-primary/20">
-                    <MessageSquare className="w-5 h-5 text-brand-primary" />
-                  </div>
-                  <h3 className="text-sm font-bold uppercase tracking-widest">Message Inbox</h3>
-                </div>
-                <div className="flex items-center gap-2 bg-brand-primary/10 px-3 py-1 rounded-lg border border-brand-primary/20">
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse" />
-                  <span className="text-[10px] font-black text-brand-primary uppercase tracking-widest">Live Feed</span>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-3">
-                {messages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-600/40">
-                    <Mail className="w-12 h-12 mb-4 opacity-20" />
-                    <p className="text-sm italic font-medium">No incoming messages</p>
-                  </div>
-                ) : (
-                  messages.map((m, i) => (
-                    <div key={i} className={`p-4 rounded-2xl border transition-all ${m.from.includes("Me")
-                      ? "bg-brand-primary/5 border-brand-primary/10 ml-8"
-                      : "bg-white/[0.02] border-white/5 mr-8"
-                      }`}>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${m.from.includes("Me") ? "text-brand-primary" : "text-brand-secondary"
-                          }`}>
-                          {m.from}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                        {m.message}
-                      </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setRefreshKey(prev => prev + 1)}
+                        className="p-3 bg-white/5 hover:bg-brand-primary/10 rounded-xl transition-all text-slate-400 hover:text-brand-primary border border-white/5"
+                      >
+                        <Activity className="w-4 h-4" />
+                      </button>
                     </div>
-                  ))
-                )}
-              </div>
-            </motion.div>
-
-          </div>
-
-          {/* STORAGE INTEGRATION SECTION */}
-          <section className="glass-card p-8 relative overflow-hidden group rounded-[3rem]">
-            <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-              <FileBarChart className="w-64 h-64 text-brand-primary" />
-            </div>
-
-            <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-12">
-              <div className="max-w-md">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-14 h-14 bg-brand-primary shadow-glow shadow-brand-primary/30 rounded-2xl flex items-center justify-center">
-                    <FileBarChart className="w-7 h-7 text-white" />
                   </div>
-                  <h2 className="text-2xl font-black text-white uppercase tracking-tight">Data Pipeline</h2>
-                </div>
-                <p className="text-slate-400 leading-relaxed font-medium">Instantly transform raw datasets into interactive visual reports. Our engine supports high-speed processing for CSV and Excel formats.</p>
-                <div className="flex gap-4 mt-8">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-black text-white">100ms</span>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Latency</span>
-                  </div>
-                  <div className="w-[1px] h-8 bg-border-subtle" />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-black text-white">AES-256</span>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Security</span>
+                  <div className="flex-1 bg-black/40 rounded-3xl overflow-hidden border border-white/10 shadow-inner h-[450px]">
+                    <PowerBIReport
+                      refreshKey={refreshKey}
+                      reportId={currentAnalyticsReportId}
+                      filters={analyticsFilters}
+                    />
                   </div>
                 </div>
-              </div>
-
-              <div className="w-full lg:flex-1 max-w-2xl bg-white/[0.02] border border-white/5 rounded-[2.5rem] p-4 shadow-inner">
-                <FileUpload onUploadSuccess={(data) => {
-                  setAnalyticsResult(data);
-                  setShowUploadSuccess(true);
-                  setTimeout(() => window.location.reload(), 2000);
-                }} />
-              </div>
-            </div>
-          </section>
-
-          {/* VISUALIZATION ENGINE SECTION */}
-          <section className="space-y-6 pt-4">
-            <div className="flex items-center justify-between pb-2">
-              <div className="flex items-center gap-4">
-                <div className="w-3 h-12 bg-brand-primary rounded-full shadow-glow" />
-                <h2 className="text-3xl font-black text-white uppercase tracking-tight">Analytics Dashboard</h2>
-              </div>
-              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-4 py-1.5 rounded-full">
-                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Engine Status: Optimal</span>
-              </div>
-            </div>
-
-            <div className="glass-card p-2 rounded-[3.5rem] shadow-premium bg-slate-900/10">
-              <div className="bg-background-main/80 backdrop-blur-md px-10 py-5 border-b border-border-subtle flex items-center justify-between rounded-t-[3.2rem]">
-                <div className="flex items-center gap-4">
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Business Intelligence Matrix</span>
+              </motion.div>
+            ) : (
+              <div className="flex items-center justify-center p-40 glass-card">
+                <div className="text-center space-y-4">
+                  <Settings className="w-16 h-16 text-slate-600 mx-auto animate-spin-slow opacity-20" />
+                  <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-600">Core Configuration - Coming Soon</p>
                 </div>
-                {analyticsResult && (
-                  <motion.div
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="bg-brand-primary text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-glow shadow-brand-primary/30"
-                  >
-                    🚀 Data Stream Synced
-                  </motion.div>
-                )}
               </div>
-
-              <div className="rounded-b-[3.2rem] overflow-hidden bg-background-main/50 relative min-h-[600px]">
-                <PowerBIReport key={analyticsResult ? 'refreshed-' + Date.now() : 'initial'} />
-              </div>
-            </div>
-          </section>
-
+            )}
+          </AnimatePresence>
         </div>
-      </main>
-
-      {/* Notifications / Feedback Overlays */}
-      <AnimatePresence>
-        {showUploadSuccess && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background-main/80 backdrop-blur-xl"
-          >
-            <div className="glass-card p-12 text-center max-w-md rounded-[3rem] border-brand-primary/30 shadow-glow shadow-brand-primary/10">
-              <div className="w-24 h-24 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-8 border border-brand-primary/20">
-                <CheckCircle className="w-12 h-12 text-brand-primary" />
-              </div>
-              <h2 className="text-3xl font-black text-white mb-4">Upload Successful!</h2>
-              <p className="text-slate-400 font-medium mb-8">Synchronizing your dataset with the visualization engine. The dashboard will refresh automatically.</p>
-              <div className="flex items-center justify-center gap-3">
-                <Loader2 className="w-6 h-6 text-brand-primary animate-spin" />
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Rebuilding Workspace...</span>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-    </div>
+      </motion.main>
+    </div >
   );
 }

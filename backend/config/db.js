@@ -16,4 +16,4 @@ db.getConnection((err) => {
   }
 });
 
-module.exports = db;
+module.exports = { db };

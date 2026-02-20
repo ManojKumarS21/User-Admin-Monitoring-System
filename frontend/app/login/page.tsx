@@ -9,30 +9,44 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const login = async () => {
+    try {
+      console.log("🔵 Attempting login...", { email, url: api.defaults.baseURL });
 
-    const res = await api.post("/login", {
-      email,
-      password
-    });
+      const res = await api.post("/login", {
+        email,
+        password
+      });
 
-    if (res.data.token) {
+      console.log("✅ Login Response:", res.data);
 
-      // SAVE EVERYTHING
-      sessionStorage.setItem("token", res.data.token);
-      sessionStorage.setItem("userId", res.data.userId);
-      sessionStorage.setItem("name", res.data.name);
-      sessionStorage.setItem("role", res.data.role);
+      if (res.data.token) {
+        // SAVE EVERYTHING
+        sessionStorage.setItem("token", res.data.token);
+        sessionStorage.setItem("userId", res.data.userId);
+        sessionStorage.setItem("name", res.data.name);
+        sessionStorage.setItem("role", res.data.role);
 
-      if (res.data.role === "admin") {
-        router.push("/admin");
+        if (res.data.role === "admin") {
+          router.push("/admin");
+        } else {
+          router.push("/user");
+        }
       } else {
-        router.push("/user");
+        alert(res.data);
       }
+    } catch (err: any) {
+      console.error("❌ Login Error:", err);
+      const msg = err.response?.data || err.message || "Login failed";
+      alert(`Login Error: ${msg}`);
+    }
+  };
 
-    } else {
-      alert(res.data);
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      login();
     }
   };
 
@@ -48,14 +62,40 @@ export default function LoginPage() {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          onKeyPress={handleKeyPress}
+          suppressHydrationWarning
         />
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <div style={{ position: "relative" }}>
+          <input
+            type={showPassword ? "text" : "password"}
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyPress={handleKeyPress}
+            suppressHydrationWarning
+            style={{ paddingRight: "45px" }}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            style={{
+              position: "absolute",
+              right: "10px",
+              top: "50%",
+              transform: "translateY(-50%)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "18px",
+              padding: "0",
+              width: "auto",
+              minWidth: "auto"
+            }}
+          >
+            {showPassword ? "👁️" : "👁️‍🗨️"}
+          </button>
+        </div>
 
         <button
           className="w-full mt-4"
@@ -65,7 +105,7 @@ export default function LoginPage() {
         </button>
 
         <p className="text-center mt-4">
-          Don’t have account? <a href="/register">Register</a>
+          Don't have account? <a href="/register">Register</a>
         </p>
 
       </div>

@@ -36,12 +36,14 @@ export default function RegisterPage() {
           placeholder="Full Name"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          suppressHydrationWarning
         />
 
         <input
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          suppressHydrationWarning
         />
 
         <input
@@ -49,6 +51,7 @@ export default function RegisterPage() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          suppressHydrationWarning
         />
 
         <button className="w-full mt-2" onClick={register}>

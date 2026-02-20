@@ -46,6 +46,13 @@ A secure platform where users register and wait for manual admin approval before
     - **User -> Admin**: Message sent via socket, server broadcasts to all connected admins.
     - **Admin -> User**: Admin sends a private message to a specific User ID.
 
+### E. Power BI Data Visualization Flow
+1. **Upload**: Admin uploads a data file (CSV/JSON/Excel).
+2. **Processing**: Backend flattens data, sanitizes keys, and **truncates to 70 columns** to stay within Power BI Push API limits.
+3. **Sync**: Backend creates a "Push Dataset" via Microsoft Azure APIs and uploads the data.
+4. **Rebind**: The master report is rebound to the new dataset dynamically.
+5. **Visualization**: Admin sees the updated report instantly within the dashboard.
+
 ---
 
 ## 4. Key Technical Features (Interview Highlights)
@@ -60,6 +67,15 @@ The server tracks active sockets mapped to User IDs. When a user connects or dis
 
 ### 🛠️ Session Isolation (Tab Issue Fix)
 We used `sessionStorage` (or unique tab IDs) to prevent data collision. This allows an Admin and a User to be logged in on the same browser in different tabs without their messages or sessions interfering with each other.
+
+### 📊 Power BI Integration: Pros & Cons
+
+| Feature | Pros (Advantages) | Cons (Limitations) |
+| :--- | :--- | :--- |
+| **Data Updates** | **Instant Visualization**: Near real-time data availability via Push API. | **Stateless**: Each upload is a fresh session; no automatic data merging. |
+| **System Load** | **Reduced DB Stress**: Data is stored in Power BI, not our MySQL server. | **Memory Usage**: Backend must flatten large JSON/Excel files in memory. |
+| **Scale** | **Dynamic Rebinding**: Supports switching datasets on-the-fly. | **Column Limit**: Hard 75-column limit (System enforced at 70). |
+| **UX** | **Seamless Embedding**: Report appears directly in the Admin portal. | **Truncation**: Excessive columns are automatically trimmed for safety. |
 
 ---
 
